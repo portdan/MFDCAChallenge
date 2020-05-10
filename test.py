@@ -31,7 +31,7 @@ def main():
 
     data = data[0:num_of_freq_words,0]
 
-    X = np.zeros((num_of_users*num_of_seg,num_of_freq_words))
+    X = np.zeros((num_of_users*num_of_seg,num_of_freq_wordsz))
 
     for user in range(num_of_users):
         for seg in range(0, num_of_seg):
