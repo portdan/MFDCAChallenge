@@ -15,14 +15,15 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense
 
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
-from sklearn import metrics
-from sklearn.utils import resample
-from tensorflow.keras.metrics import Accuracy,AUC, Precision, Recall
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, \
+    confusion_matrix, roc_auc_score, auc
+from keras.metrics import BinaryAccuracy
 
+from sklearn.utils import resample
 
 output_folder_name = 'Output'
 data_folder_name = 'FraudedRawData'
@@ -30,32 +31,42 @@ label_file_name = 'challengeToFill.csv'
 metrics_file_name = 'metrics.csv'
 
 fieldnames = [
-        'rep',
-        'learning_rate',
-        'epochs',
-        'classifier',
-        'train_precision',
-        'train_recall',
-        'train_loss',
-        'train_balanced_accuracy',
-        'train_accuracy',
-        'train_roc_auc',
-        'test_precision',
-        'test_recall',
-        'test_loss',
-        'test_balanced_accuracy',
-        'test_accuracy',
-        'test_roc_auc'
-        ]
-
+    'rep',
+    'learning_rate',
+    'epochs',
+    'hidden_units',
+    'optimizer',
+    'loss_function',
+    'train_accuracy',
+    'train_precision',
+    'train_recall',
+    'train_f1_score',
+    'train_roc_auc_score',
+    'train_auc',
+    'train_confusion_matrix',
+    'test_accuracy',
+    'test_precision',
+    'test_recall',
+    'test_f1_score',
+    'test_roc_auc_score',
+    'test_auc',
+    'test_confusion_matrix',
+]
 
 num_of_labeled_users = 10
 num_of_segments = 150
 num_of_words_in_seg = 100
 
+Reps = range(4)
+
+Epochs = [500, 1000, 2000]
+Learning_rates = [1e-1, 1e-2, 1e-3]
+Hidden_units = [[4, 4, 0], [10, 10, 0], [50, 50, 0], [100, 100, 0], [10, 10, 10], [50, 50, 50], [100, 100, 100]]
+Optimizers = ['Adam', 'Adagrad', 'SGD']
+Loss_functions = ['binary_crossentropy', 'hinge', 'squared_hinge']
+
 
 def read_train_data(labels):
-
     X = []
     Y = []
 
@@ -72,22 +83,34 @@ def read_train_data(labels):
 
             Y.append((int(labels.values[user, seg])))
 
-    return np.array(X),  np.array(Y)
+    return np.array(X), np.array(Y)
 
-def create_model(nn1=20, nn2=20, input_shape=1, output_shape=2, lr=1e-1):
 
-    # use AdagradOptimizer with gradient clipings
-    my_optimizer = keras.optimizers.Adagrad(learning_rate=lr, clipnorm=5)
+def create_model(nn1=20, nn2=20, nn3=20, optimizer='Adam', loss='binary_crossentropy',
+                 activation='relu', input_shape=1, output_shape=2, lr=1e-2):
+    if optimizer is 'Adam':
+        optimizer = keras.optimizers.Adam(learning_rate=lr)
+    if optimizer is 'Adagrad':
+        optimizer = keras.optimizers.Adagrad(learning_rate=lr)
+    if optimizer is 'SGD':
+        optimizer = keras.optimizers.SGD(learning_rate=lr)
 
     # create model
     model = Sequential()
-    model.add(Dense(nn1, input_dim=input_shape, activation='relu'))
-    model.add(Dense(nn2, activation='relu'))
+
+    model.add(Dense(nn1, input_dim=input_shape, activation=activation))
+
+    if nn2 > 0:
+        model.add(Dense(nn2, activation=activation))
+    if nn3 > 0:
+        model.add(Dense(nn3, activation=activation))
+
     model.add(Dense(output_shape, activation='sigmoid'))
 
     # Compile model
-    model.compile(loss='binary_crossentropy', optimizer=my_optimizer, metrics=[Accuracy(), AUC(), Precision(), Recall()])
+    model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
     return model
+
 
 def upsample(X, Y):
     X_vec = np.array(X).reshape(-1, 1)
@@ -110,14 +133,8 @@ def upsample(X, Y):
 
     return np.array(res_upsampled['Segment']), np.array(res_upsampled['Label']).astype(int)
 
+
 def main():
-
-
-    reps = range(4)
-    epochs_to_try = [500, 1000, 2000]
-    learning_rates_to_try = [0.1, 0.01]
-    hidden_units_to_try = [[4, 4], [10, 10], [20, 20]]
-
     input_file = os.path.abspath(os.path.join(label_file_name))
     metrics_csv_name = os.path.abspath(os.path.join(output_folder_name, metrics_file_name))
 
@@ -131,68 +148,103 @@ def main():
     tfidf_transformer = TfidfTransformer()
     X_train_tfidf = tfidf_transformer.fit_transform(X_train_counts)
 
-    '''
-    X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
-    vectorizer = CountVectorizer()
-    vectorizer.fit(X_train)
-    X_train = vectorizer.transform(X_train)
-    X_test = vectorizer.transform(X_test)
-    '''
-
     with  open(metrics_csv_name, 'w', newline='') as metrics_csv:
         csv_writer = csv.DictWriter(metrics_csv, fieldnames=fieldnames)
         csv_writer.writeheader()
 
-    for rep in reps:
+    for rep in Reps:
         print('\n@@ Rep: ', rep)
 
-        X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
-
-        for learning_rate in learning_rates_to_try:
+        for learning_rate in Learning_rates:
             print('\n@@ Learning rate: ', learning_rate)
 
-            for epochs in epochs_to_try:
+            for epochs in Epochs:
                 print('\n@@ Epochs: ', epochs)
 
-                for hidden_units in hidden_units_to_try:
-                    print('\n@@ Hidden units: ', hidden_units)
+                for hidden_units in Hidden_units:
+                    print('\n@@ hidden units: ', hidden_units)
 
-                    # create model
-                    model = KerasClassifier(build_fn=create_model, verbose=0, epochs=epochs,
-                                            nn1=hidden_units[0], nn2=hidden_units[1], lr=learning_rate,
-                                            input_shape=X_train.shape[1], output_shape=1)
+                    for optimizer in Optimizers:
+                        print('\n@@ optimizer: ', optimizer)
 
-                    model.fit(X_train.toarray(),y_train)
+                        for loss_function in Loss_functions:
+                            print('\n@@ loss_function: ', loss_function)
 
-                    y_pred_train = model.predict(X_train.toarray())
-                    y_pred_prob_train = model.predict_proba(X_train.toarray())
-                    y_pred_prob_train = [p[1] for p in y_pred_prob_train]
+                            X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
 
-                    y_pred_test = model.predict(X_test.toarray())
-                    y_pred_prob_test = model.predict_proba(X_test.toarray())
-                    y_pred_prob_test = [p[1] for p in y_pred_prob_test]
+                            # create model
+                            model = KerasClassifier(build_fn=create_model, verbose=0,
+                                                    nn1=hidden_units[0], nn2=hidden_units[1], nn3=hidden_units[2],
+                                                    optimizer=optimizer, loss=loss_function,
+                                                    activation='relu', input_shape=X_train.shape[1], output_shape=1,
+                                                    lr=learning_rate)
 
-                    with open(metrics_csv_name, 'a', newline='') as metrics_csv:
-                        csv_writer = csv.DictWriter(metrics_csv, fieldnames)
-                        csv_writer.writerow({
-                        'rep': rep,
-                        'learning_rate': learning_rate,
-                        'epochs': epochs,
-                        'classifier': 'dnn classifier with ' + str(hidden_units) + ' hidden_units',
-                        'train_precision': metrics.precision_score(y_pred_train, y_pred_train),
-                        'train_recall': metrics.recall_score(y_pred_train, y_train),
-                        'train_loss': metrics.label_ranking_loss(y_pred_train, y_pred_prob_train),
-                        'train_balanced_accuracy': metrics.balanced_accuracy_score(y_pred_train, y_train),
-                        'train_accuracy': metrics.accuracy_score(y_pred_train, y_train),
-                        'train_roc_auc': metrics.roc_auc_score(y_pred_train, y_pred_prob_train),
-                        'test_precision': metrics.precision_score(y_pred_test, y_pred_test),
-                        'test_recall': metrics.recall_score(y_pred_test, y_test),
-                        'test_loss': metrics.label_ranking_loss(y_pred_test, y_pred_prob_test),
-                        'test_balanced_accuracy': metrics.balanced_accuracy_score(y_pred_test, y_test),
-                        'test_accuracy': metrics.accuracy_score(y_pred_test, y_test),
-                        'test_roc_auc': metrics.roc_auc_score(y_pred_test, y_pred_prob_test),
-                        })
+                            model.fit(X_train.toarray(), y_train)
 
+                            y_pred_train = model.predict(X_train.toarray())
+                            y_pred_prob_train = model.predict_proba(X_train.toarray())
+                            y_pred_prob_train = [p[1] for p in y_pred_prob_train]
+
+                            y_pred_test = model.predict(X_test.toarray())
+                            y_pred_prob_test = model.predict_proba(X_test.toarray())
+                            y_pred_prob_test = [p[1] for p in y_pred_prob_test]
+
+                            train_accuracy = accuracy_score(y_pred_train, y_train)
+                            train_precision = precision_score(y_pred_train, y_pred_train, zero_division=1)
+                            train_recall = recall_score(y_pred_train, y_train, zero_division=1)
+                            train_f1_score = f1_score(y_pred_train, y_train, zero_division=1)
+
+                            try:
+                                train_roc_auc_score = roc_auc_score(y_pred_train, y_pred_prob_train)
+                            except:
+                                train_roc_auc_score = -1
+                            try:
+                                train_auc = auc(y_pred_train, y_pred_prob_train)
+                            except:
+                                train_auc = -1
+
+                            train_confusion_matrix = confusion_matrix(y_pred_train, y_train)
+
+                            test_accuracy = accuracy_score(y_pred_test, y_test)
+                            test_precision = precision_score(y_pred_test, y_pred_test)
+                            test_recall = recall_score(y_pred_test, y_test)
+                            test_f1_score = f1_score(y_pred_test, y_test)
+
+                            try:
+                                test_roc_auc_score = roc_auc_score(y_pred_test, y_pred_prob_test)
+                            except:
+                                test_roc_auc_score = -1
+                            try:
+                                test_auc = auc(y_pred_test, y_pred_prob_test)
+                            except:
+                                test_auc = -1
+
+                            test_confusion_matrix = confusion_matrix(y_pred_test, y_test)
+
+                            with open(metrics_csv_name, 'a', newline='') as metrics_csv:
+                                csv_writer = csv.DictWriter(metrics_csv, fieldnames)
+                                csv_writer.writerow({
+                                    'rep': rep,
+                                    'learning_rate': learning_rate,
+                                    'epochs': epochs,
+                                    'hidden_units': hidden_units,
+                                    'optimizer': optimizer,
+                                    'loss_function': loss_function,
+                                    'train_accuracy': train_accuracy,
+                                    'train_precision': train_precision,
+                                    'train_recall': train_recall,
+                                    'train_f1_score': train_f1_score,
+                                    'train_roc_auc_score': train_roc_auc_score,
+                                    'train_auc': train_auc,
+                                    'train_confusion_matrix': train_confusion_matrix,
+                                    'test_accuracy': test_accuracy,
+                                    'test_precision': test_precision,
+                                    'test_recall': test_recall,
+                                    'test_f1_score': test_f1_score,
+                                    'test_roc_auc_score': test_roc_auc_score,
+                                    'test_auc': test_auc,
+                                    'test_confusion_matrix': test_confusion_matrix
+                                })
 
 if __name__ == '__main__':
     main()
