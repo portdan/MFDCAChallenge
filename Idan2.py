@@ -15,13 +15,13 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense, Dropout, Activation
 
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
-from sklearn import metrics
-from sklearn.utils import resample
 from tensorflow.keras.metrics import Accuracy,AUC, Precision, Recall
+
+from sklearn.utils import resample
 
 
 output_folder_name = 'Output'
@@ -34,19 +34,33 @@ fieldnames = [
         'learning_rate',
         'epochs',
         'classifier',
-        'train_precision',
+        'train_average_precision',
         'train_recall',
-        'train_loss',
+        'train_log_loss',
         'train_balanced_accuracy',
         'train_accuracy',
+        'train_auc',
         'train_roc_auc',
-        'test_precision',
+        'train_loss',
+        'train_label/mean',
+        'train_precision',
+        'train_global_step',
+        'train_prediction/mean',
+        'test_average_precision',
         'test_recall',
-        'test_loss',
+        'test_log_loss',
         'test_balanced_accuracy',
         'test_accuracy',
-        'test_roc_auc'
+        'test_auc',
+        'test_roc_auc',
+        'test_loss',
+        'test_label/mean',
+        'test_precision',
+        'test_global_step',
+        'test_prediction/mean',
         ]
+
+
 
 
 num_of_labeled_users = 10
@@ -86,7 +100,7 @@ def create_model(nn1=20, nn2=20, input_shape=1, output_shape=2, lr=1e-1):
     model.add(Dense(output_shape, activation='sigmoid'))
 
     # Compile model
-    model.compile(loss='binary_crossentropy', optimizer=my_optimizer, metrics=[Accuracy(), AUC(), Precision(), Recall()])
+    model.compile(loss='binary_crossentropy', optimizer=my_optimizer)
     return model
 
 def upsample(X, Y):
@@ -110,11 +124,13 @@ def upsample(X, Y):
 
     return np.array(res_upsampled['Segment']), np.array(res_upsampled['Label']).astype(int)
 
+
 def main():
 
 
     reps = range(4)
     epochs_to_try = [500, 1000, 2000]
+    embedding_dims_to_try = [2, 4, 10, 100]
     learning_rates_to_try = [0.1, 0.01]
     hidden_units_to_try = [[4, 4], [10, 10], [20, 20]]
 
@@ -125,12 +141,31 @@ def main():
 
     X, Y = read_train_data(input_file_df)
 
+    # X, Y = upsample(X, Y)
+
+
+    tokenizer = keras.preprocessing.text.Tokenizer()
+
+    tokenizer.fit_on_texts(X)
+    X = tokenizer.texts_to_sequences(X)
+
+    num_classes = max(Y) + 1
+    print('# of Classes: {}'.format(num_classes))
+
+    index_to_word = {}
+    for key, value in tokenizer.word_index.items():
+        index_to_word[value] = key
+
+    print(' '.join([index_to_word[x] for x in X[0]]))
+    print(Y[0])
+
+    '''
     count_vect = CountVectorizer()
     X_train_counts = count_vect.fit_transform(X)
 
     tfidf_transformer = TfidfTransformer()
     X_train_tfidf = tfidf_transformer.fit_transform(X_train_counts)
-
+    '''
     '''
     X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
     vectorizer = CountVectorizer()
@@ -146,7 +181,16 @@ def main():
     for rep in reps:
         print('\n@@ Rep: ', rep)
 
-        X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2)
+
+        max_words = 10000
+
+        tokenizer = keras.preprocessing.text.Tokenizer().fi
+        X_train = tokenizer.sequences_to_matrix(X_train, mode='tfidf')
+        X_test = tokenizer.sequences_to_matrix(X_test, mode='tfidf')
+
+        y_train = keras.utils.to_categorical(y_train, num_classes)
+        y_test = keras.utils.to_categorical(y_test, num_classes)
 
         for learning_rate in learning_rates_to_try:
             print('\n@@ Learning rate: ', learning_rate)
@@ -157,12 +201,28 @@ def main():
                 for hidden_units in hidden_units_to_try:
                     print('\n@@ Hidden units: ', hidden_units)
 
-                    # create model
-                    model = KerasClassifier(build_fn=create_model, verbose=0, epochs=epochs,
-                                            nn1=hidden_units[0], nn2=hidden_units[1], lr=learning_rate,
-                                            input_shape=X_train.shape[1], output_shape=1)
+                    model = Sequential()
+                    model.add(Dense(512, input_shape=(max_words,)))
+                    model.add(Activation('relu'))
+                    model.add(Dropout(0.5))
+                    model.add(Dense(num_classes))
+                    model.add(Activation('softmax'))
 
-                    model.fit(X_train.toarray(),y_train)
+                    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[Accuracy(), AUC(), Precision(), Recall()])
+                    print(model.metrics_names)
+
+                    batch_size = 32
+                    epochs = 3
+
+                    history = model.fit(X_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,
+                                        validation_split=0.1, class_weight = {0:10, 1:1})
+                    score = model.evaluate(X_test, y_test, batch_size=batch_size, verbose=1)
+
+                    print('Test loss:', score[0])
+                    print('Test accuracy:', score[1])
+                    print('Test auc:', score[2])
+                    print('Test precision:', score[3])
+                    print('Test recall:', score[4])
 
                     y_pred_train = model.predict(X_train.toarray())
                     y_pred_prob_train = model.predict_proba(X_train.toarray())
@@ -179,20 +239,36 @@ def main():
                         'learning_rate': learning_rate,
                         'epochs': epochs,
                         'classifier': 'dnn classifier with ' + str(hidden_units) + ' hidden_units',
-                        'train_precision': metrics.precision_score(y_pred_train, y_pred_train),
+                        'train_average_precision': metrics.average_precision_score(y_pred_train, y_pred_prob_train),
                         'train_recall': metrics.recall_score(y_pred_train, y_train),
-                        'train_loss': metrics.label_ranking_loss(y_pred_train, y_pred_prob_train),
+                        'train_log_loss': metrics.log_loss(y_pred_train, y_pred_prob_train),
                         'train_balanced_accuracy': metrics.balanced_accuracy_score(y_pred_train, y_train),
                         'train_accuracy': metrics.accuracy_score(y_pred_train, y_train),
+                        'train_auc': 0,
                         'train_roc_auc': metrics.roc_auc_score(y_pred_train, y_pred_prob_train),
-                        'test_precision': metrics.precision_score(y_pred_test, y_pred_test),
+                        'train_loss': 0,
+                        'train_label/mean': 0,
+                        'train_precision': metrics.precision_score(y_pred_train, y_train),
+                        'train_global_step': 0,
+                        'train_prediction/mean': 0,
+                        'test_average_precision': metrics.average_precision_score(y_pred_test, y_pred_prob_test),
                         'test_recall': metrics.recall_score(y_pred_test, y_test),
-                        'test_loss': metrics.label_ranking_loss(y_pred_test, y_pred_prob_test),
+                        'test_log_loss': metrics.log_loss(y_pred_test, y_pred_prob_test),
                         'test_balanced_accuracy': metrics.balanced_accuracy_score(y_pred_test, y_test),
                         'test_accuracy': metrics.accuracy_score(y_pred_test, y_test),
+                        'test_auc': 0,
                         'test_roc_auc': metrics.roc_auc_score(y_pred_test, y_pred_prob_test),
+                        'test_loss': 0,
+                        'test_label/mean': 0,
+                        'test_precision': metrics.precision_score(y_pred_test, y_test),
+                        'test_global_step': 0,
+                        'test_prediction/mean': 0,
                         })
 
+                    # DNN classifier with embedding column
+
+                    for embedding_dim in embedding_dims_to_try:
+                        print('\n@@ Embedding dim: ', embedding_dim)
 
 if __name__ == '__main__':
     main()

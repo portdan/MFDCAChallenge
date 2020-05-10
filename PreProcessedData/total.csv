@@ -15,7 +15,7 @@ grep,10422
 gcc,9459
 tcpostio,8894
 hostname,7712
-TRUE,7531
+true,7531
 uname,7529
 expr,7476
 ln,7463
@@ -376,7 +376,7 @@ concorde,24
 fold,24
 a.sl,23
 get_acc,23
-FALSE,22
+false,22
 lec.awk,22
 justlex,22
 t,21
@@ -679,7 +679,7 @@ prefix,1
 ruptime,1
 polar,1
 splitmai,1
-#NAME?,1
+=p,1
 bo_rep_f,1
 xlbiff,1
 xev,1

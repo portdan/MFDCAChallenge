@@ -26,15 +26,14 @@ from sklearn.pipeline import Pipeline
 
 from sklearn.utils import resample
 
-import keras
-from keras.metrics import AUC, MeanSquaredError, Accuracy
-from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers.core import Dense, Dropout, Flatten
-from keras.layers import Dense
-from keras.layers import Dropout
-from keras.optimizers import SGD
-from keras.wrappers.scikit_learn import KerasClassifier
+import tensorflow.keras
+from tensorflow.keras.metrics import AUC, MeanSquaredError, Accuracy
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Flatten
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
 output_folder_name = 'Output'
 data_folder_name = 'FraudedRawData'
