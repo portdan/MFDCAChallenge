@@ -1,12 +1,8 @@
-import pandas as pd
 import numpy as np
 import os
-import shutil
-import scipy
 import csv
 
 import pandas as pd
-import tensorflow as tf
 from tensorflow import keras
 
 from sklearn.model_selection import train_test_split
@@ -21,9 +17,11 @@ from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, \
     confusion_matrix, roc_auc_score, auc
-from keras.metrics import BinaryAccuracy
 
 from sklearn.utils import resample
+
+from imblearn.over_sampling import SMOTE, RandomOverSampler
+from imblearn.under_sampling import AllKNN
 
 output_folder_name = 'Output'
 data_folder_name = 'FraudedRawData'
@@ -142,13 +140,31 @@ def main():
 
     X, Y = read_train_data(input_file_df)
 
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2)
+
     count_vect = CountVectorizer()
-    X_train_counts = count_vect.fit_transform(X)
+    X_train_counts = count_vect.fit_transform(X_train.reshape(-1))
+    X_test_counts = count_vect.transform(X_test)
 
     tfidf_transformer = TfidfTransformer()
-    X_train_tfidf = tfidf_transformer.fit_transform(X_train_counts)
+    X_train = tfidf_transformer.fit_transform(X_train_counts)
+    X_test = tfidf_transformer.transform(X_test_counts)
 
-    with  open(metrics_csv_name, 'w', newline='') as metrics_csv:
+    # X_train, y_train = upsample(X_train, y_train)
+
+    # ros = RandomOverSampler(random_state=777)
+    # X_train, y_train = ros.fit_sample(X_train, y_train)
+
+    # sm = SMOTE(random_state=777, sampling_strategy=1.0)
+    # X_train, y_train = sm.fit_sample(X_train, y_train)
+
+    sampler = AllKNN(allow_minority=True, n_neighbors=20)
+    X_train, y_train = sampler.fit_sample(X_train, y_train)
+
+    sm = SMOTE(random_state=777, sampling_strategy=1.0)
+    X_train, y_train = sm.fit_sample(X_train, y_train)
+
+    with open(metrics_csv_name, 'w', newline='') as metrics_csv:
         csv_writer = csv.DictWriter(metrics_csv, fieldnames=fieldnames)
         csv_writer.writeheader()
 
@@ -169,8 +185,6 @@ def main():
 
                         for loss_function in Loss_functions:
                             print('\n@@ loss_function: ', loss_function)
-
-                            X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, Y, test_size=0.2)
 
                             # create model
                             model = KerasClassifier(build_fn=create_model, verbose=0,
@@ -206,9 +220,9 @@ def main():
                             train_confusion_matrix = confusion_matrix(y_pred_train, y_train)
 
                             test_accuracy = accuracy_score(y_pred_test, y_test)
-                            test_precision = precision_score(y_pred_test, y_pred_test)
-                            test_recall = recall_score(y_pred_test, y_test)
-                            test_f1_score = f1_score(y_pred_test, y_test)
+                            test_precision = precision_score(y_pred_test, y_pred_test, zero_division=1)
+                            test_recall = recall_score(y_pred_test, y_test, zero_division=1)
+                            test_f1_score = f1_score(y_pred_test, y_test, zero_division=1)
 
                             try:
                                 test_roc_auc_score = roc_auc_score(y_pred_test, y_pred_prob_test)
