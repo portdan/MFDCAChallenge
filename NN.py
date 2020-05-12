@@ -19,6 +19,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
     confusion_matrix, roc_auc_score, auc
 
 from sklearn.utils import resample
+from sklearn.utils import class_weight
 
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.under_sampling import AllKNN
@@ -55,14 +56,19 @@ num_of_labeled_users = 10
 num_of_segments = 150
 num_of_words_in_seg = 100
 
-Reps = range(4)
+Reps = range(1)
 
-Epochs = [500, 1000, 2000]
-Learning_rates = [1e-1, 1e-2, 1e-3]
-Hidden_units = [[4, 4, 0], [10, 10, 0], [50, 50, 0], [100, 100, 0], [10, 10, 10], [50, 50, 50], [100, 100, 100]]
+# Epochs = [500, 1000, 2000]
+# Learning_rates = [1e-1, 1e-2, 1e-3]
+# Hidden_units = [[4, 4, 0], [10, 10, 0], [50, 50, 0], [100, 100, 0], [10, 10, 10], [50, 50, 50], [100, 100, 100]]
+# Optimizers = ['Adam', 'Adagrad', 'SGD']
+# Loss_functions = ['binary_crossentropy', 'hinge', 'squared_hinge']
+
+Epochs = [5000, 10000, 50000, 100000]
+Learning_rates = [1e-1, 1e-2]
+Hidden_units = [[200, 200, 200], [500, 500, 500] ,[1000, 1000, 1000]]
 Optimizers = ['Adam', 'Adagrad', 'SGD']
-Loss_functions = ['binary_crossentropy', 'hinge', 'squared_hinge']
-
+Loss_functions = ['binary_crossentropy']
 
 def read_train_data(labels):
     X = []
@@ -158,11 +164,13 @@ def main():
     # sm = SMOTE(random_state=777, sampling_strategy=1.0)
     # X_train, y_train = sm.fit_sample(X_train, y_train)
 
-    sampler = AllKNN(allow_minority=True, n_neighbors=20)
-    X_train, y_train = sampler.fit_sample(X_train, y_train)
+    # sampler = AllKNN(allow_minority=True, n_neighbors=20)
+    # X_train, y_train = sampler.fit_sample(X_train, y_train)
+    #
+    # sm = SMOTE(random_state=777, sampling_strategy=1.0)
+    # X_train, y_train = sm.fit_sample(X_train, y_train)
 
-    sm = SMOTE(random_state=777, sampling_strategy=1.0)
-    X_train, y_train = sm.fit_sample(X_train, y_train)
+    class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
 
     with open(metrics_csv_name, 'w', newline='') as metrics_csv:
         csv_writer = csv.DictWriter(metrics_csv, fieldnames=fieldnames)
@@ -193,6 +201,7 @@ def main():
                                                     activation='relu', input_shape=X_train.shape[1], output_shape=1,
                                                     lr=learning_rate)
 
+                            # model.fit(X_train.toarray(), y_train, class_weight=class_weights)
                             model.fit(X_train.toarray(), y_train)
 
                             y_pred_train = model.predict(X_train.toarray())
