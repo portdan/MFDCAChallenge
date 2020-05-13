@@ -2,10 +2,8 @@ import csv
 import os
 import shutil
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.covariance import EllipticEnvelope
 from sklearn.ensemble import IsolationForest
@@ -123,6 +121,51 @@ def main():
     preds_gmm = []
 
     preds= []
+
+    for user in range(0,num_of_labeled_users):
+        X_all = X[user]
+        Y_all = Y[user]
+
+        count_vect = CountVectorizer()
+        tfidf_transformer = TfidfTransformer(use_idf=False)
+
+        X_all_counts = count_vect.fit_transform(X_all)
+        X_all_tfidf = tfidf_transformer.fit_transform(X_all_counts)
+
+        n_estimators = [int(x) for x in np.linspace(start=200, stop=2000, num=10)]
+        max_features = [int(x) for x in np.linspace(start=10, stop=100, num=10)]
+        max_samples = [int(x) for x in np.linspace(start=100, stop=1000, num=10)]
+        max_samples.append('auto')
+        contamination = [0.001, 0.1, 0.2, 0.5]
+        bootstrap = [True, False]
+
+        # Create the random grid
+        random_grid = {'n_estimators': n_estimators,
+                       'max_features': max_features,
+                       'max_samples': max_samples,
+                       'contamination': contamination,
+                       'bootstrap': bootstrap}
+
+        isf_random = RandomizedSearchCV(estimator=isf, param_distributions=random_grid, n_iter=1, cv=3, verbose=2,
+                                       random_state=42, n_jobs=-1, scoring=make_scorer(accuracy_score))
+
+        isf_random.fit(X_all_tfidf, Y_all)
+
+
+        nu = [0.05,0.1,0.15,0.2]
+        gamma = [0.01,0.05,0.1,0.2]
+        kernel = ['rbf']
+
+
+        # Create the random grid
+        random_grid = {'nu': nu,
+                       'kernel': kernel,
+                       'gamma': gamma}
+
+        svm_random = RandomizedSearchCV(estimator=svm, param_distributions=random_grid, n_iter=50, cv=3, verbose=2,
+                                        random_state=42, n_jobs=-1, scoring=make_scorer(accuracy_score))
+
+        svm_random.fit(X_all_tfidf, Y_all)
 
     for user in range(num_of_labeled_users,num_of_users):
         X_all = X[user]
