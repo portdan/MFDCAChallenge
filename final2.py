@@ -1,26 +1,25 @@
-import csv
 import os
-import shutil
-from gensim.models import Word2Vec
+
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans
+from gensim.models import Word2Vec
+from sklearn.pipeline import Pipeline
+
 from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.covariance import EllipticEnvelope
 from sklearn.ensemble import IsolationForest
+from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.metrics import accuracy_score, confusion_matrix, make_scorer
+from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.mixture import GaussianMixture
-from sklearn.model_selection import RandomizedSearchCV
-from sklearn.model_selection import train_test_split
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
-from tensorflow import keras
-from tensorflow.keras import regularizers
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.models import Sequential, Model
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import FeatureUnion
+
 
 output_folder_name = 'Output2'
 data_folder_name = 'FraudedRawData'
@@ -125,6 +124,18 @@ def evaluate_model(preds, labels):
     print("average false_positive = %s" % (FP / num_of_labeled_users))
     print("#" * 10)
 
+class TextStats(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, usr):
+        return [{'length': len(seg),
+                 'num_Upper_case': sum(1 for c in seg if c.isupper())}
+               #  'average_num_command': avg_frequent_cmd(seg),
+              #   'count_max_command': count_most_frequent_cmd(seg)}
+                for seg in usr]
+
 def main():
 
     X = read_data()
@@ -218,6 +229,7 @@ def main():
         Y_labeled = Y[user][0:num_of_genuine_segments]
         Y_unlabeled = Y[user][num_of_genuine_segments:]
 
+
         count_vect = CountVectorizer()
         tfidf_transformer = TfidfTransformer(use_idf=False)
 
@@ -229,10 +241,45 @@ def main():
         X_labeled_tfidf = tfidf_transformer.transform(X_labeled_counts)
         X_unlabeled_tfidf = tfidf_transformer.transform(X_unlabeled_counts)
 
-        w2v_model = Word2Vec(size=100, window=5, min_count=1, workers=4)
+
+        stats_transformer = TextStats()
+        DictVector = DictVectorizer()
+
+        X_all_stats = stats_transformer.fit_transform(X_all)
+        X_labeled_stats = stats_transformer.transform(X_labeled)
+        X_unlabeled_stats = stats_transformer.transform(X_unlabeled)
+
+        X_all_vect = DictVector.fit_transform(X_all_stats)
+        X_labeled_vect = DictVector.transform(X_labeled_stats)
+        X_unlabeled_vect = DictVector.transform(X_unlabeled_stats)
+
+        fu = FeatureUnion(
+                transformer_list=[
+                    # Pipeline for standard bag-of-words model for body
+                    ('body_bow', Pipeline([
+                        ('vect', count_vect),
+                        ('tfidf', tfidf_transformer),
+                    ])),
+
+                    # Pipeline for pulling ad hoc features from post's body
+                    ('body_stats', Pipeline([
+                        ('stats', stats_transformer),  # returns a list of dicts
+                        ('vect', DictVector),  # list of dicts -> feature matrix
+                    ])),
+                ],
+                transformer_weights={
+                    'body_bow': 0.5,
+                    'body_stats': 1.0,
+                })
+
+        X_all_tfidf=fu.fit_transform(X_all)
+        X_labeled_tfidf = fu.transform(X_labeled)
+        X_unlabeled_tfidf = fu.transform(X_unlabeled)
+
+        '''w2v_model = Word2Vec(size=100, window=5, min_count=1, workers=4)
         w2v_model.build_vocab(X_all, progress_per=10000)
         w2v_model.train(X_all, total_examples=w2v_model.corpus_count, epochs=30, report_delay=1)
-        w2v_model.init_sims(replace=True)
+        w2v_model.init_sims(replace=True)'''
 
         isf.fit(X_all_tfidf)
         lof.fit(X_all_tfidf)
@@ -264,8 +311,8 @@ def main():
         preds_gmm.append(pred_gmm)
         preds_dbs.append(pred_dbs)
 
-        pred_sum = np.array(pred_lof) + np.array(pred_isf) + np.array(pred_svm) +\
-                   np.array(pred_cov) + np.array(pred_kmn) + np.array(pred_gmm) + np.array(pred_dbs)
+        pred_sum = np.array(pred_lof) + np.array(pred_isf) + np.array(pred_svm) +np.array(pred_kmn) +\
+                   np.array(pred_cov) +  + np.array(pred_gmm) + np.array(pred_dbs)
 
         majority = [1 if i > 2 else 0 for i in pred_sum]
         preds.append(majority)
